@@ -39,6 +39,7 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
 
     'rest_framework',
+    'corsheaders',
 
     'cart',
     'pricing',
@@ -48,6 +49,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'corsheaders.middleware.CorsMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -132,6 +134,14 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 # Configuración para "Almacenamiento" de ficheros (Facturas PDF)
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
+
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+]
+
+CORS_ALLOW_ALL_ORIGINS = True
+CORS_ALLOW_CREDENTIALS = True
 
 # Claves de Stripe
 STRIPE_PUBLIC_KEY = 'pk_test_51SQuQkQ8xFyNYu2kI8s8zvN0dWFpOBFiCZsJkdGtcxa9d3DMWObk9LKKdQHBt6r3ZwDCSUMrURmtinlZAsZjFzjM00oUErTOKZ' # Reemplaza con tu clave pública de Stripe

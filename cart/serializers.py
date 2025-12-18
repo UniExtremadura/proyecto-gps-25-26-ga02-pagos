@@ -8,7 +8,7 @@ class CartItemAddSerializer(serializers.ModelSerializer):
     price_at_addition = serializers.DecimalField(
         max_digits=10,
         decimal_places=2,
-        required=True  # Esto fuerza a que sea obligatorio
+        required=True
     )
     class Meta:
         model = CartItem
@@ -34,7 +34,10 @@ class ShoppingCartSerializer(serializers.ModelSerializer):
     class Meta:
         model = ShoppingCart
         fields = [
-            'id', 'user', 'status', 'items',
+            'id',
+            'user_id',  # <--- ¡AQUÍ ESTABA EL CAMBIO! (Antes ponía 'user')
+            'status',
+            'items',
             'subtotal', 'tax_rate_name', 'tax_rate_percent',
             'tax_amount', 'total'
         ]

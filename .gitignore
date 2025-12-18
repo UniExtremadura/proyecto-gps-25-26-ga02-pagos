@@ -1,15 +1,50 @@
-# Python Virtual Environment
-.venv/*
-
-# Databases
-*.sqlite*
-
-# Misc
-.idea
-.DS_Store
-# stripe id account: acct_1SQuQkQ8xFyNYu2k
-# Cached files
+# ---------------------------------
+# PYTHON Y DJANGO CORE
+# ---------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
 */_pycache_
 *.pyc
-# Python init files
-__init__.py
+
+# ---------------------------------
+# ENTORNOS VIRTUALES
+# ---------------------------------
+.venv/
+venv/
+env/
+ENV/
+
+# Base de datos (¡Nunca subir!)
+*.sqlite*
+
+# Logs de errores
+*.log
+
+# ---------------------------------
+# SECRETOS Y CONFIGURACIÓN
+# ---------------------------------
+.env
+.env.*
+local_settings.py
+
+# ---------------------------------
+# IDEs Y SISTEMA OPERATIVO
+# ---------------------------------
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# stripe id account: acct_1SQuQkQ8xFyNYu2k
+
+# Media
+/media/
+
+
+# Migrations
+*/migrations/*
+!*/migrations/__init__.py

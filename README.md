@@ -106,7 +106,7 @@ Para probar el sistema de pagos real, necesitamos simular la conexión con Strip
 2.  **Terminal 2 (Stripe Listen - Webhook):**
 
     ```bash
-    .\stripe.exe listen --forward-to http://127.0.0.1:8000/api/v1/webhooks/stripe/
+    .\stripe.exe listen --forward-to http://127.0.0.1:8003/api/v1/webhooks/stripe/
     ```
 
       * **IMPORTANTE:** Copia el `whsec_...` que aparece, pégalo en `proyecto_gps_25_26_ga02_pagos/settings.py` y **reinicia la Terminal 1**.
