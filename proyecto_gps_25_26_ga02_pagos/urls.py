@@ -21,15 +21,17 @@ from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
 
+API_PREFIX = 'api/v1/'
+
 urlpatterns = [
     path('admin/', admin.site.urls),
 
-    # Conecta todas las URLs de la app 'cart' bajo el prefijo 'api/v1/cart/'
-    path('api/v1/', include('cart.urls')),
+    # Conecta todas las URL de la app 'cart' bajo el prefijo 'api/v1/cart/'
+    path(API_PREFIX, include(('orders.urls', 'orders'), namespace='orders')),
 
-    path('api/v1/', include(('orders.urls', 'orders'), namespace='orders')),
+    path(API_PREFIX, include('cart.urls')),
 
-    path('api/v1/', include('payments.urls')),
+    path(API_PREFIX, include('payments.urls')),
 ]
 
 
