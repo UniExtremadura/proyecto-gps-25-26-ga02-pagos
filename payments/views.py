@@ -144,8 +144,6 @@ class StripeWebhookAPIView(APIView):
     # --- CORRECCIÓN 3: El Webhook debe ser público ---
     permission_classes = [AllowAny]
 
-    # -------------------------------------------------
-
     def post(self, request, *args, **kwargs):
         payload = request.body
         sig_header = request.META.get('HTTP_STRIPE_SIGNATURE')
@@ -160,13 +158,42 @@ class StripeWebhookAPIView(APIView):
         except stripe.error.SignatureVerificationError as e:
             return Response(status=400)
 
-        # Aquí procesarías el evento (payment_intent.succeeded)
-        # Para ahora, devolvemos 200 OK para que Stripe sepa que lo recibimos
+
         if event['type'] == 'payment_intent.succeeded':
             payment_intent = event['data']['object']
-            print(f"💰 WEBHOOK: Pago recibido! ID: {payment_intent['id']}")
-            # Aquí podrías buscar la Orden por metadatos y marcarla como pagada
-            # order_id = payment_intent['metadata'].get('order_id')
-            # ... lógica para actualizar DB ...
+
+            # 1. Recuperamos el ID del pedido desde los metadatos de Stripe
+            # (Lo enviamos nosotros en ConfirmPaymentAPIView)
+            metadata = payment_intent.get('metadata', {})
+            order_id = metadata.get('order_id')
+
+            print(f"💰 WEBHOOK: Pago recibido en Stripe. ID: {payment_intent['id']}")
+            print(f"📋 WEBHOOK: Buscando pedido local ID: {order_id}...")
+
+            if order_id:
+                try:
+                    # 2. Buscamos el pedido en nuestra base de datos
+                    order = Order.objects.get(pk=order_id)
+
+                    # 3. Verificamos que no esté ya pagado para evitar duplicados
+                    if order.status != Order.OrderStatus.PAID:
+                        order.status = Order.OrderStatus.PAID
+                        order.save()
+                        print(f"✅ WEBHOOK: ¡Pedido {order_id} marcado como COMPLETADO!")
+                    else:
+                        print(f"ℹ️ WEBHOOK: El pedido {order_id} ya estaba completado.")
+
+                except Order.DoesNotExist:
+                    print(f"❌ WEBHOOK: Error crítico. El pedido {order_id} no existe en la DB.")
+            else:
+                print("⚠️ WEBHOOK: El pago no tiene 'order_id' en los metadatos.")
+
+            # Manejar caso de pago fallido (opcional pero recomendado)
+        elif event['type'] == 'payment_intent.payment_failed':
+            payment_intent = event['data']['object']
+            print(f"❌ WEBHOOK: El pago falló. ID: {payment_intent['id']}")
+            # Aquí podrías buscar la orden y ponerla en 'CANCELLED' si quisieras
+
+        # Devolvemos 200 OK rápido para que Stripe sepa que recibimos el mensaje
 
         return Response(status=status.HTTP_200_OK)
