@@ -7,13 +7,9 @@
 # Misc
 .idea
 .DS_Store
-
-# Migrations
-*/migrations
-!*/migrations/0001_initial.py
-
+# stripe id account: acct_1SQuQkQ8xFyNYu2k
 # Cached files
 */_pycache_
-
+*.pyc
 # Python init files
-*/_init_.py
+__init__.py
