@@ -102,3 +102,17 @@ class OrderRetrieveAPIView(generics.RetrieveAPIView):
 
     def get_queryset(self):
         return Order.objects.filter(user_id=self.request.user.id)
+
+
+class MyOrdersListAPIView(generics.ListAPIView):
+    """
+    GET /api/v1/orders/me/
+    Devuelve el histórico de todos los pedidos del usuario autenticado.
+    """
+    authentication_classes = [JWTAuthenticationSafe]
+    permission_classes = [IsAuthenticated]
+    serializer_class = OrderResponseSerializer
+
+    def get_queryset(self):
+        # Filtramos por el ID del usuario que viene en el token
+        return Order.objects.filter(user_id=self.request.user.id).order_by('-created_at')

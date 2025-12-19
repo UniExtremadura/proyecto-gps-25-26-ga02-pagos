@@ -45,6 +45,7 @@ INSTALLED_APPS = [
     'pricing',
     'orders',
     'payments',
+    'invoices',
 ]
 
 MIDDLEWARE = [
@@ -63,7 +64,7 @@ ROOT_URLCONF = 'proyecto_gps_25_26_ga02_pagos.urls'
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [BASE_DIR / 'templates']
+        'DIRS': [BASE_DIR / 'invoices/templates']
         ,
         'APP_DIRS': True,
         'OPTIONS': {
@@ -145,6 +146,8 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 # Configuración para "Almacenamiento" de ficheros (Facturas PDF)
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
+
+ALLOWED_HOSTS = ["*"]
 
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:5173",

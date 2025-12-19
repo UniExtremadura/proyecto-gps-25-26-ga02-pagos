@@ -15,16 +15,26 @@ def generate_invoice_pdf_for_order(order: Order):
     """
     Genera el PDF y crea el objeto Invoice.
     """
+    from invoices.models import Invoice
+
     try:
+        # 1. Renderizado (Busca en invoices/templates/invoices/invoice.html)
         html_string = render_to_string('invoices/invoice.html', {'order': order})
+
+        # 2. Generación binaria
         pdf_file = HTML(string=html_string).write_pdf()
         filename = f'factura_{order.order_id}.pdf'
 
+        # 3. Persistencia en BD y Disco
+        # Asegúrate de que el related_name en el modelo sea 'invoice_record' o similar
         invoice, created = Invoice.objects.get_or_create(order=order)
+
+        # Guardamos el contenido binario en el campo FileField
         invoice.invoice_pdf.save(filename, ContentFile(pdf_file), save=True)
 
         logger.info(f"Factura PDF generada y guardada para Pedido {order.order_id}")
         return invoice
+
     except Exception as e:
         logger.error(f"Error al generar PDF para Pedido {order.order_id}: {e}")
         raise
