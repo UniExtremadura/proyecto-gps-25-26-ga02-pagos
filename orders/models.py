@@ -1,13 +1,15 @@
 import uuid
 from django.db import models
-from django.conf import settings
 from typing import Any
+
+
+# Eliminamos la dependencia de settings y auth_user_model
 
 class Order(models.Model):
     """
-    Representa un pedido completo
-    Esto es lo que se convierte en factura
+    Representa un pedido completo.
     """
+
     class OrderStatus(models.TextChoices):
         PENDING = 'PENDING', 'Pendiente'
         PAID = 'PAID', 'Pagado'
@@ -15,7 +17,9 @@ class Order(models.Model):
         REFUNDED = 'REFUNDED', 'Reembolsado'
 
     order_id = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
-    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+
+    user_id = models.PositiveIntegerField(help_text="ID del usuario (Microservicio Usuarios)", default=1)
+
     status = models.CharField(
         max_length=10,
         choices=OrderStatus.choices,
@@ -23,7 +27,6 @@ class Order(models.Model):
     )
 
     # ----- Detalles de pago -----
-
     amount = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
     currency = models.CharField(max_length=3, default='EUR')
 
@@ -35,14 +38,15 @@ class Order(models.Model):
 
     created_at = models.DateTimeField(auto_now_add=True)
 
-    def __dir__(self):
-        return f"Pedido {self.order_id} - Usuario: {self.user.username} - Estado: {self.status}"
+    def __str__(self):
+        return f"Pedido {self.order_id} - UserID: {self.user_id} - Estado: {self.status}"
 
 
 class OrderItem(models.Model):
     """
     Los articulos dentro de un pedido
     """
+
     class ItemType(models.TextChoices):
         ALBUM = 'ALBUM', 'Álbum'
         TRACK = 'TRACK', 'Canción'
@@ -51,10 +55,10 @@ class OrderItem(models.Model):
     item_type = models.CharField(
         max_length=10,
         choices=ItemType.choices,
-        help_text="Precio por unidad en el momento de la compra",
-        default=0.00
+        default=ItemType.TRACK
     )
-    order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name='lines' )
+    order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name='lines')
+
     product_id = models.IntegerField()
     quantity = models.PositiveIntegerField()
     unit_price = models.DecimalField(max_digits=10, decimal_places=2, help_text='Unidad del producto')
@@ -64,7 +68,7 @@ class OrderItem(models.Model):
         return self.quantity * self.unit_price
 
     def __str__(self):
-        return f"Producto {self.product_id} - Cantidad: {self.quantity} - Precio Unitario: {self.unit_price}"
+        return f"Item {self.product_id} (x{self.quantity}) en Pedido {self.order.order_id}"
 
 
 class Invoice(models.Model):

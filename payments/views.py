@@ -1,232 +1,199 @@
-from rest_framework import status, generics
-from rest_framework.permissions import IsAuthenticated
+from rest_framework import status
+from rest_framework.permissions import IsAuthenticated, AllowAny  # <--- Importar AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from rest_framework.permissions import AllowAny
 import stripe
 import logging
 from django.conf import settings
-from django.views.decorators.csrf import csrf_exempt
 from django.utils.decorators import method_decorator
-from django.db import transaction
-from .models import PaymentMethod, Customer
-from .serializers import (
-    AddPaymentMethodRequestSerializer,
-    PaymentMethodSerializer,
-    PaymentIntentRequestSerializer,
-    PaymentIntentResponseSerializer,
-)
+from django.views.decorators.csrf import csrf_exempt
 from orders.models import Order
-# ¡¡IMPORTANTE!! Asegúrate de que tu 'services.py' SÍ tiene estas funciones
-from .services import handle_payment_intent_failed, handle_payment_intent_succeeded
 
 # Configurar Stripe
 stripe.api_key = settings.STRIPE_SECRET_KEY
 logger = logging.getLogger(__name__)
 
 
-def get_or_create_stripe_customer(user):
+class SavePaymentMethodAPIView(APIView):
     """
-    Busca o crea un Customer en nuestra BBDD y en Stripe.
-    Versión robusta que comprueba si el cliente existe en Stripe.
-    """
-    try:
-        # 1. Busca en nuestra BBDD
-        customer = Customer.objects.get(user=user)
-
-        # 2. Verificamos si el cliente AÚN EXISTE en Stripe
-        try:
-            stripe.Customer.retrieve(customer.stripe_customer_id)
-            return customer.stripe_customer_id
-
-        except stripe.InvalidRequestError:
-            # 3. ¡El cliente NO existe en Stripe! (Error 'No such customer')
-            logger.warning(f"Borrando Customer local 'stale' {customer.stripe_customer_id} para user {user.id}")
-            customer.delete()
-            raise Customer.DoesNotExist  # Forzamos que vaya al bloque 'except'
-
-    except Customer.DoesNotExist:
-        # 4. Si no existe (o lo acabamos de borrar), lo crea en Stripe
-        try:
-            stripe_customer = stripe.Customer.create(
-                email=user.email if user.email else None,  # Asegurarse de que el email no es None
-                name=user.username,
-                description=f"Cliente Django (ID: {user.id})"
-            )
-            customer = Customer.objects.create(
-                user=user,
-                stripe_customer_id=stripe_customer.id
-            )
-            return customer.stripe_customer_id
-
-        except stripe.StripeError as e:
-            logger.error(f"Error creando Customer en Stripe para user {user.id}: {e}")
-            raise
-
-
-class PaymentMethodListCreateAPIView(generics.ListCreateAPIView):
-    """
-    Corresponde a:
-    - GET /api/v1/payment-methods/ (Listar)
-    - POST /api/v1/payment-methods/ (Añadir)
+    Recibe el ID del PaymentMethod desde el frontend (Stripe Elements)
+    y lo asocia a un Customer en Stripe.
     """
     permission_classes = [IsAuthenticated]
 
-    def get_serializer_class(self):
-        if self.request.method == 'POST':
-            return AddPaymentMethodRequestSerializer
-        return PaymentMethodSerializer
-
-    def get_queryset(self):
-        return PaymentMethod.objects.filter(user=self.request.user)
-
     def post(self, request, *args, **kwargs):
-        serializer = self.get_serializer(data=request.data)
-        if not serializer.is_valid():
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        # --- CORRECCIÓN 1: Usar datos REALES del usuario logueado ---
+        user = request.user
+        current_user_id = user.id
+        # Intentamos sacar el email, si no tiene, inventamos uno consistente
+        current_user_email = getattr(user, 'email', f'user_{current_user_id}@novatune.local')
+        # ------------------------------------------------------------
 
-        token = serializer.validated_data['token']
-        make_default = serializer.validated_data['make_default']
+        # 2. Datos del frontend
+        pm_id = request.data.get('payment_method_id')
+
+        if not pm_id:
+            return Response({"error": "Falta el payment_method_id"}, status=400)
+
+        try:
+            # 3. Buscar o Crear Customer EN STRIPE
+            search = stripe.Customer.search(
+                query=f"email:'{current_user_email}'",
+                limit=1
+            )
+
+            if search.data:
+                customer = search.data[0]
+            else:
+                customer = stripe.Customer.create(
+                    email=current_user_email,
+                    name=f"Usuario {current_user_id}",
+                    metadata={'user_id': str(current_user_id)}
+                )
+
+            # 4. Adjuntar el método de pago al cliente
+            stripe.PaymentMethod.attach(pm_id, customer=customer.id)
+
+            # 5. Marcarlo como por defecto
+            stripe.Customer.modify(
+                customer.id,
+                invoice_settings={'default_payment_method': pm_id}
+            )
+
+            return Response({
+                "payment_method_id": pm_id,
+                "customer_id": customer.id,
+                "message": "Método guardado correctamente"
+            }, status=200)
+
+        except stripe.StripeError as e:
+            return Response({"error": str(e)}, status=400)
+
+
+class ConfirmPaymentAPIView(APIView):
+    """
+    Recibe order_id y payment_method_id para ejecutar el cobro final.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        order_id = request.data.get('order_id')
+        pm_id = request.data.get('payment_method_id')
+
+        customer_id = request.data.get('customer_id')
+
+        if not order_id or not pm_id:
+            return Response(
+                {"error": "Faltan datos (order_id o payment_method_id)"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # 1. Extraemos el ID numérico del usuario
         user = request.user
 
         try:
-            customer_id = get_or_create_stripe_customer(user)
-
-            # 1. Adjuntamos el token al cliente. ESTO "gasta" el token.
-            attached_pm = stripe.PaymentMethod.attach(token, customer=customer_id)
-
-            # 2. Si es default, usamos el ID del OBJETO ADJUNTO (attached_pm.id)
-            if make_default:
-                stripe.Customer.modify(
-                    customer_id,
-                    invoice_settings={'default_payment_method': attached_pm.id},
-                )
-
-            with transaction.atomic():
-                new_pm = PaymentMethod.objects.create(
-                    user=user,
-                    payment_method_id=f"pm_{user.id}_{attached_pm.card.last4}",
-                    psp_ref=attached_pm.id,  # <-- Usamos el ID permanente
-                    brand=attached_pm.card.brand,
-                    last4=attached_pm.card.last4,
-                    exp_mm=attached_pm.card.exp_month,
-                    exp_yy=attached_pm.card.exp_year,
-                    is_default=make_default,
-                )
-                if make_default:
-                    PaymentMethod.objects.filter(user=user).exclude(pk=new_pm.pk).update(is_default=False)
-
-            response_serializer = PaymentMethodSerializer(new_pm)
-            return Response(response_serializer.data, status=status.HTTP_201_CREATED)
-
-        except stripe.StripeError as e:
-            return Response({"error": e.user_message or str(e)}, status=status.HTTP_400_BAD_REQUEST)
-        except Exception as e:
-            return Response({"error": "Error interno del servidor"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-
-class PaymentMethodDestroyAPIView(generics.DestroyAPIView):
-    permission_classes = [IsAuthenticated]
-    lookup_field = 'payment_method_id'
-
-    def get_queryset(self):
-        return PaymentMethod.objects.filter(user=self.request.user)
-
-    def perform_destroy(self, instance):
-        try:
-            stripe.PaymentMethod.detach(instance.psp_ref)
-        except Exception as e:
-            logger.warning(f"No se pudo des-adjuntar PM de Stripe: {e}")
-        instance.delete()
-
-
-class PaymentIntentCreateAPIView(APIView):
-    permission_classes = [IsAuthenticated]
-    serializer_class = PaymentIntentRequestSerializer
-
-    def post(self, request, *args, **kwargs):
-        serializer = self.serializer_class(data=request.data)
-        if not serializer.is_valid():
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-        order_id = serializer.validated_data['order_id']
-        pm_internal_id = serializer.validated_data['payment_method_id']
-        user = request.user
-
-        try:
-            order = Order.objects.get(order_id=order_id, user=user, status=Order.OrderStatus.PENDING)
-            pm = PaymentMethod.objects.get(payment_method_id=pm_internal_id, user=user)
-            customer_id = get_or_create_stripe_customer(user)
-            amount_in_cents = int(order.amount * 100)
-
-            # Creamos el PaymentIntent USANDO el customer_id y el pm.psp_ref
-            intent = stripe.PaymentIntent.create(
-                amount=amount_in_cents,
-                currency=order.currency.lower(),
-                customer=customer_id,
-                payment_method=pm.psp_ref,  # El ID 'pm_...' permanente
-                confirm=True,  # Intentar el pago ahora
-                off_session=True,  # Indicar que el cliente no está presente
-                description=f"Pago por Orden {order.order_id}",
-                metadata={"order_id": str(order.order_id), "user_id": str(user.id)},
+            order = Order.objects.get(
+                id=order_id,
+                user_id=user.id,
+                status=Order.OrderStatus.PENDING
             )
-
-            response_data = {
-                "provider": "stripe",
-                "client_secret": intent.client_secret,
-                "payment_id": intent.id,
-            }
-            resp_ser = PaymentIntentResponseSerializer(data=response_data)
-            resp_ser.is_valid(raise_exception=True)
-            return Response(resp_ser.data, status=200)
-
         except Order.DoesNotExist:
-            return Response({"error": "Orden no encontrada o ya procesada."}, status=404)
-        except PaymentMethod.DoesNotExist:
-            return Response({"error": "Método de pago no encontrado."}, status=404)
+            return Response(
+                {"error": "Orden no encontrada o ya pagada"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        # 2. Si no viene customer_id, intentamos buscarlo en Stripe por email
+        if not customer_id:
+            search = stripe.Customer.search(
+                query=f"email:'{getattr(user, 'email', f'user_{user.id}@novatune.local')}'",
+                limit=1
+            )
+            if search.data:
+                customer_id = search.data[0].id
 
-        except stripe.CardError as e:
-            return Response({"error": e.user_message}, status=402)
-        except stripe.InvalidRequestError as e:
-            return Response({"error": e.user_message}, status=402)
+        try:
+            # 3. Crear PaymentIntent CON customer
+            intent_data = {
+                "amount": int(order.amount * 100),
+                "currency": order.currency.lower(),
+                "payment_method": pm_id,
+                "confirm": True,
+                "return_url": "http://localhost:5173/checkout/result",
+                "metadata": {'order_id': order.id}
+            }
+
+            if customer_id:
+                intent_data["customer"] = customer_id
+
+            intent = stripe.PaymentIntent.create(**intent_data)
+
+            return Response({
+                'client_secret': intent.client_secret,
+                'status': intent.status
+            })
+
+
         except stripe.StripeError as e:
-            return Response({"error": "Error del proveedor de pago"}, status=500)
+            return Response({"error": str(e)}, status=400)
+        except Exception as e:
+            return Response({"error": str(e)}, status=400)
 
 
 @method_decorator(csrf_exempt, name='dispatch')
 class StripeWebhookAPIView(APIView):
+    # --- CORRECCIÓN 3: El Webhook debe ser público ---
     permission_classes = [AllowAny]
 
     def post(self, request, *args, **kwargs):
         payload = request.body
         sig_header = request.META.get('HTTP_STRIPE_SIGNATURE')
-        webhook_secret = settings.STRIPE_WEBHOOK_SECRET
-
-        if not webhook_secret:
-            logger.error("Webhook: STRIPE_WEBHOOK_SECRET no está configurada.")
-            return Response({"error": "Webhook secret no configurado"}, status=500)
+        event = None
 
         try:
             event = stripe.Webhook.construct_event(
-                payload, sig_header, webhook_secret
+                payload, sig_header, settings.STRIPE_WEBHOOK_SECRET
             )
         except ValueError as e:
-            logger.warning(f"Webhook (ValueError): {e}")
-            return Response(status=status.HTTP_400_BAD_REQUEST)
-        except stripe.SignatureVerificationError as e:
-            logger.warning(f"Webhook (SignatureError): {e}")
-            return Response(status=status.HTTP_400_BAD_REQUEST)
+            return Response(status=400)
+        except stripe.error.SignatureVerificationError as e:
+            return Response(status=400)
 
-        event_type = event['type']
-        event_data = event['data']
 
-        if event_type == 'payment_intent.succeeded':
-            logger.info("Webhook: Recibido 'payment_intent.succeeded'")
-            handle_payment_intent_succeeded(event_data)
-        elif event_type == 'payment_intent.payment_failed':
-            logger.warning("Webhook: Recibido 'payment_intent.payment_failed'")
-            handle_payment_intent_failed(event_data)
-        else:
-            logger.info(f"Webhook: Evento no manejado: {event_type}")
+        if event['type'] == 'payment_intent.succeeded':
+            payment_intent = event['data']['object']
+
+            # 1. Recuperamos el ID del pedido desde los metadatos de Stripe
+            # (Lo enviamos nosotros en ConfirmPaymentAPIView)
+            metadata = payment_intent.get('metadata', {})
+            order_id = metadata.get('order_id')
+
+            print(f"💰 WEBHOOK: Pago recibido en Stripe. ID: {payment_intent['id']}")
+            print(f"📋 WEBHOOK: Buscando pedido local ID: {order_id}...")
+
+            if order_id:
+                try:
+                    # 2. Buscamos el pedido en nuestra base de datos
+                    order = Order.objects.get(pk=order_id)
+
+                    # 3. Verificamos que no esté ya pagado para evitar duplicados
+                    if order.status != Order.OrderStatus.PAID:
+                        order.status = Order.OrderStatus.PAID
+                        order.save()
+                        print(f"✅ WEBHOOK: ¡Pedido {order_id} marcado como COMPLETADO!")
+                    else:
+                        print(f"ℹ️ WEBHOOK: El pedido {order_id} ya estaba completado.")
+
+                except Order.DoesNotExist:
+                    print(f"❌ WEBHOOK: Error crítico. El pedido {order_id} no existe en la DB.")
+            else:
+                print("⚠️ WEBHOOK: El pago no tiene 'order_id' en los metadatos.")
+
+            # Manejar caso de pago fallido (opcional pero recomendado)
+        elif event['type'] == 'payment_intent.payment_failed':
+            payment_intent = event['data']['object']
+            print(f"❌ WEBHOOK: El pago falló. ID: {payment_intent['id']}")
+            # Aquí podrías buscar la orden y ponerla en 'CANCELLED' si quisieras
+
+        # Devolvemos 200 OK rápido para que Stripe sepa que recibimos el mensaje
 
         return Response(status=status.HTTP_200_OK)

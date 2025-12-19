@@ -13,6 +13,30 @@ Este microservicio gestiona el ciclo completo de compra: carrito, cálculo de im
 
 ---
 
+# 🐳 Ejecución con Docker (Recomendado)
+Esta es la forma más rápida de levantar el microservicio junto con su base de datos profesional (MySQL/PostgreSQL) y el frontend.
+
+**1. Requisitos**  
+-  Docker Desktop instalado y en ejecución.
+
+**2. Levantar la infraestructura**  
+- Desde la raíz del proyecto (donde se encuentra el archivo `docker-compose.yml`):
+
+```Bash
+# Construir y levantar los contenedores
+docker-compose up --build
+```
+
+**3. Migraciones y Superusuario** 
+Una vez que los contenedores estén en ejecución, abre una nueva terminal para configurar la base de datos interna:
+
+```Bash
+# Aplicar migraciones dentro del contenedor
+docker exec -it django_backend python manage.py migrate
+# Crear superusuario
+docker exec -it django_backend python manage.py createsuperuser
+```
+
 ## 🚀 Instalación y Configuración
 
 ### 1. Configurar Entorno
@@ -106,7 +130,7 @@ Para probar el sistema de pagos real, necesitamos simular la conexión con Strip
 2.  **Terminal 2 (Stripe Listen - Webhook):**
 
     ```bash
-    .\stripe.exe listen --forward-to http://127.0.0.1:8000/api/v1/webhooks/stripe/
+    .\stripe.exe listen --forward-to http://127.0.0.1:8003/api/v1/webhooks/stripe/
     ```
 
       * **IMPORTANTE:** Copia el `whsec_...` que aparece, pégalo en `proyecto_gps_25_26_ga02_pagos/settings.py` y **reinicia la Terminal 1**.

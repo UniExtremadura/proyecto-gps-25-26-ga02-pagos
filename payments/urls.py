@@ -1,30 +1,15 @@
 from django.urls import path
-from .views import (
-    PaymentMethodListCreateAPIView,
-    PaymentMethodDestroyAPIView,
-    PaymentIntentCreateAPIView,
-    StripeWebhookAPIView
-)
+from .views import SavePaymentMethodAPIView, ConfirmPaymentAPIView, StripeWebhookAPIView
 
 urlpatterns = [
-    # GET, POST /api/v1/payment-methods/
-    path('payment-methods/',
-         PaymentMethodListCreateAPIView.as_view(),
-         name='payment-method-list-create'),
+    # ALERTA: Aquí SÍ hace falta poner 'payments/' porque tu urls.py principal no lo pone.
 
-    # DELETE /api/v1/payment-methods/<pm_id>/
-    path('payment-methods/<str:payment_method_id>/',
-         PaymentMethodDestroyAPIView.as_view(),
-         name='payment-method-destroy'),
+    # Ruta final: /api/v1/payments/save-method/
+    path('payments/save-method/', SavePaymentMethodAPIView.as_view(), name='save-payment-method'),
 
-    # POST /api/v1/payments/intent/
-    path('payments/intent/',
-         PaymentIntentCreateAPIView.as_view(),
-         name='payment-intent-create'),
+    # Ruta final: /api/v1/payments/confirm/
+    path('payments/confirm/', ConfirmPaymentAPIView.as_view(), name='confirm-payment'),
 
-    # POST /api/v1/webhooks/stripe/
-    # Webhook para recibir eventos de Stripe
-    path('webhooks/stripe/',
-         StripeWebhookAPIView.as_view(),
-         name='webhook-stripe'),
+    # Ruta final: /api/v1/webhooks/stripe/ (o payments/webhooks/stripe si prefieres)
+    path('webhooks/stripe/', StripeWebhookAPIView.as_view(), name='webhook-stripe'),
 ]
