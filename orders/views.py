@@ -1,17 +1,16 @@
 from rest_framework import status, generics
-from rest_framework.permissions import AllowAny  # <--- IMPORTANTE
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from django.shortcuts import get_object_or_404
 from django.db import transaction
 from django.http import Http404
-
+from proyecto_gps_25_26_ga02_pagos.authentication import JWTAuthenticationSafe  # <--- PON ESTO (Ajusta la ruta según donde creaste el archivo)
 from .models import Order, OrderItem
 from cart.models import ShoppingCart
 from pricing.services import calculate_cart_totals
 
 from .serializers import (
-    CreateOrderRequestSerializer,
     OrderAcceptedResponseSerializer,
     OrderResponseSerializer
 )
@@ -22,19 +21,18 @@ class OrderListCreateAPIView(APIView):
     POST /api/v1/orders
     Crea una nueva orden a partir de los datos del carrito.
     """
-    permission_classes = [AllowAny]  # <--- Puerta abierta
-    authentication_classes = []  # <--- Sin chequeo de token
+    authentication_classes = [JWTAuthenticationSafe]
+    permission_classes = [IsAuthenticated]
 
     def post(self, request, *args, **kwargs):
-        # --- SIMULACIÓN DE USUARIO (Microservicio) ---
-        current_user_id = 1
-        # ---------------------------------------------
+        current_user = request.user
+        user_id_num = current_user.id
 
         try:
             # 1. Obtener el carrito activo usando user_id
             cart = get_object_or_404(
                 ShoppingCart,
-                user_id=current_user_id,  # <--- Usamos el ID numérico
+                user_id=user_id_num,
                 status=ShoppingCart.CartStatus.ACTIVE
             )
             cart_items = cart.items.all()
@@ -51,7 +49,7 @@ class OrderListCreateAPIView(APIView):
             # 4. Crear la Orden y los Items (Atomicidad)
             with transaction.atomic():
                 order = Order.objects.create(
-                    user_id=current_user_id,  # <--- Usamos el ID numérico
+                    user_id=user_id_num,
                     status=Order.OrderStatus.PENDING,
                     amount=totals['total'],
                     currency="EUR",
@@ -96,14 +94,25 @@ class OrderRetrieveAPIView(generics.RetrieveAPIView):
     """
     GET /api/v1/orders/{order_id}
     """
-    permission_classes = [AllowAny]  # <--- Puerta abierta
-    authentication_classes = []
+    permission_classes = [IsAuthenticated]
 
     serializer_class = OrderResponseSerializer
     queryset = Order.objects.all()
     lookup_field = 'order_id'
 
     def get_queryset(self):
-        # Filtramos por el ID numérico simulado
-        current_user_id = 1
-        return Order.objects.filter(user_id=current_user_id)
+        return Order.objects.filter(user_id=self.request.user.id)
+
+
+class MyOrdersListAPIView(generics.ListAPIView):
+    """
+    GET /api/v1/orders/me/
+    Devuelve el histórico de todos los pedidos del usuario autenticado.
+    """
+    authentication_classes = [JWTAuthenticationSafe]
+    permission_classes = [IsAuthenticated]
+    serializer_class = OrderResponseSerializer
+
+    def get_queryset(self):
+        # Filtramos por el ID del usuario que viene en el token
+        return Order.objects.filter(user_id=self.request.user.id).order_by('-created_at')

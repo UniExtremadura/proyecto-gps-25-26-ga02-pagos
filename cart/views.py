@@ -1,10 +1,7 @@
 from rest_framework import generics
-from rest_framework.permissions import AllowAny
-from rest_framework.response import Response
+from rest_framework.permissions import IsAuthenticated
+from proyecto_gps_25_26_ga02_pagos.authentication import JWTAuthenticationSafe
 from django.shortcuts import get_object_or_404
-
-# NOTA: Ya no importamos 'User' ni 'get_user_model' porque somos un microservicio independiente.
-
 from .models import ShoppingCart, CartItem
 from .serializers import (
     ShoppingCartSerializer,
@@ -12,15 +9,17 @@ from .serializers import (
     CartItemDisplaySerializer
 )
 
-
-def get_or_create_cart(user_id_number):
+# HELPER: Obtener o crear carrito (Limpio y robusto)
+def get_or_create_cart(user):
     """
     Función helper para Microservicios:
     Busca un carrito basado en un ID numérico (user_id), no en una tabla de usuarios.
     """
+    user_id_num = user.id  # Asumimos que 'user' tiene un atributo 'id' numérico
+
     # 1. Buscamos si existe un carrito activo para este número de usuario
     cart = ShoppingCart.objects.filter(
-        user_id=user_id_number,
+        user_id=user_id_num,
         status=ShoppingCart.CartStatus.ACTIVE
     ).first()
 
@@ -28,57 +27,50 @@ def get_or_create_cart(user_id_number):
     if not cart:
         # Opcional: Limpiar carritos viejos si quieres
         ShoppingCart.objects.filter(
-            user_id=user_id_number,
+            user_id=user_id_num,
             status=ShoppingCart.CartStatus.ORDERED
         ).delete()
 
         cart = ShoppingCart.objects.create(
-            user_id=user_id_number,
+            user_id=user_id_num,
             status=ShoppingCart.CartStatus.ACTIVE
         )
 
     return cart
 
-
+# VISTA 1: Ver Carrito
 class CartRetrieveAPIView(generics.RetrieveAPIView):
     """
     GET /api/v1/cart/
     Muestra el carrito del usuario actual.
     """
-    permission_classes = [AllowAny]
+    permission_classes = [IsAuthenticated]
     serializer_class = ShoppingCartSerializer
 
     def get_object(self):
-        # SIMULACIÓN: Asumimos que somos el usuario ID 1
-        current_user_id = 1
-        return get_or_create_cart(current_user_id)
+        return get_or_create_cart(self.request.user)
 
 
+# VISTA 2: Añadir Item
 class CartItemAddAPIView(generics.CreateAPIView):
     """
     POST /api/v1/cart/items/
-    Añade ítems al carrito.
     """
-    permission_classes = [AllowAny]
-    authentication_classes = []  # Sin seguridad por ahora
+    # 1. SEGURIDAD: Usamos la clase segura que importamos arriba
+    # 2. PERMISOS: Solo gente logueada
+    permission_classes = [IsAuthenticated]
 
     serializer_class = CartItemAddSerializer
 
     def perform_create(self, serializer):
-        # --- LÓGICA DE MICROSERVICIO ---
-        # Aquí fingimos ser el Usuario con ID 1.
-        # Al no usar request.user, no necesitamos la tabla auth_user.
-        current_user_id = 1
-        # -------------------------------
-
-        cart = get_or_create_cart(current_user_id)
+        # Al usar JWTAuthenticationSafe, request.user ya es el usuario correcto
+        cart = get_or_create_cart(self.request.user)
 
         product_id = serializer.validated_data.get('product_id')
         quantity = serializer.validated_data.get('quantity', 1)
         price = serializer.validated_data.get('price_at_addition')
 
         try:
-            # Si el producto ya está, sumamos cantidad
             item = CartItem.objects.get(cart=cart, product_id=product_id)
             item.quantity += quantity
             if price:
@@ -86,28 +78,26 @@ class CartItemAddAPIView(generics.CreateAPIView):
             item.save()
             serializer.instance = item
         except CartItem.DoesNotExist:
-            # Si es nuevo, lo creamos
             serializer.save(cart=cart)
 
     def get_serializer(self, *args, **kwargs):
-        # Usamos el serializer de visualización para la respuesta
         if 'instance' in kwargs:
             kwargs['context'] = self.get_serializer_context()
             return CartItemDisplaySerializer(*args, **kwargs)
         return super().get_serializer(*args, **kwargs)
 
 
+# VISTA 3: Borrar Item
 class CartItemDestroyAPIView(generics.DestroyAPIView):
     """
     DELETE /api/v1/cart/items/{id}/
     Borra un ítem del carrito.
     """
-    permission_classes = [AllowAny]
-    authentication_classes = []
+    permission_classes = [IsAuthenticated]
     lookup_field = 'pk'
 
     def get_queryset(self):
-        # Solo permitimos borrar ítems del usuario 1
-        current_user_id = 1
-        cart = get_or_create_cart(current_user_id)
+        # Solo permitimos borrar ítems del usuario actual
+        # Primero aseguramos que el carrito existe/pertenece al usuario
+        cart = get_or_create_cart(self.request.user)
         return CartItem.objects.filter(cart=cart)

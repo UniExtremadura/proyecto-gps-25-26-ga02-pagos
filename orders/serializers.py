@@ -64,6 +64,9 @@ class OrderResponseSerializer(serializers.ModelSerializer):
 
 # Serializer para la respuesta de aceptación del pedido
 class OrderAcceptedResponseSerializer(serializers.ModelSerializer):
+    # Forzamos que 'order_id' devuelva la Primary Key (el número), no el campo UUID.
+    order_id = serializers.IntegerField(source='pk')
+
     class Meta:
         model = Order
         fields = ['order_id', 'status']

@@ -20,7 +20,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-^f&o8=j@^*sq+rpnu#0b06$+m4t*_+(vb4#4#f#7jxeh8ai$h+'
+SECRET_KEY = 'django-insecure-d602df)f+c0zvo^yd+b9!ekzk5u+^i23%(akf-0l0!d3$476j^'
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
@@ -45,6 +45,7 @@ INSTALLED_APPS = [
     'pricing',
     'orders',
     'payments',
+    'invoices',
 ]
 
 MIDDLEWARE = [
@@ -52,7 +53,7 @@ MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
-    'django.middleware.csrf.CsrfViewMiddleware',
+    #'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
@@ -63,7 +64,7 @@ ROOT_URLCONF = 'proyecto_gps_25_26_ga02_pagos.urls'
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [BASE_DIR / 'templates']
+        'DIRS': [BASE_DIR / 'invoices/templates']
         ,
         'APP_DIRS': True,
         'OPTIONS': {
@@ -109,6 +110,17 @@ AUTH_PASSWORD_VALIDATORS = [
 ]
 
 
+REST_FRAMEWORK = {
+    # 1. AUTENTICACIÓN: Usamos SOLO tu clase segura (nada de Sessions/Cookies)
+    'DEFAULT_AUTHENTICATION_CLASSES': (
+        'proyecto_gps_25_26_ga02_pagos.authentication.JWTAuthenticationSafe',
+    ),
+    # 2. PERMISOS: Por defecto, todo requiere estar logueado
+    'DEFAULT_PERMISSION_CLASSES': (
+        'rest_framework.permissions.IsAuthenticated',
+    ),
+}
+
 # Internationalization
 # https://docs.djangoproject.com/en/5.2/topics/i18n/
 
@@ -134,6 +146,8 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 # Configuración para "Almacenamiento" de ficheros (Facturas PDF)
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
+
+ALLOWED_HOSTS = ["*"]
 
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:5173",
