@@ -83,12 +83,23 @@ WSGI_APPLICATION = 'proyecto_gps_25_26_ga02_pagos.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
+#DATABASES = {
+#    'default': {
+#        'ENGINE': 'django.db.backends.sqlite3',
+#        'NAME': BASE_DIR / 'db.sqlite3',
+#    }
+#}
+
 DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
-    }
-}
+     'default': {
+         'ENGINE': 'django.db.backends.postgresql_psycopg2',
+         'NAME': 'payments_db',
+         'USER': 'payments_db',
+         'PASSWORD': 'payments_password',
+         'HOST': 'db_pagos',
+         'PORT': 5432,
+     }
+ }
 
 
 # Password validation
